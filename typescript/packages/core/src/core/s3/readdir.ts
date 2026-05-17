@@ -34,7 +34,8 @@ export async function readdir(
   // Fast path: the index cache may already have this directory populated
   // from a previous readdir. Mirror Python's mirage/core/s3/readdir.py.
   const virtualKey = rawPath === '/' ? '/' : rawPath.replace(/\/+$/, '') || '/'
-  const fullVirtualKey = prefix !== '' ? `${prefix}${virtualKey}` : virtualKey
+  const rawFullKey = prefix !== '' ? `${prefix}${virtualKey}` : virtualKey
+  const fullVirtualKey = rawFullKey.replace(/\/+$/, '') || '/'
   if (index !== undefined) {
     const listing = await index.listDir(fullVirtualKey)
     if (listing.entries !== undefined && listing.entries !== null) {
