@@ -47,6 +47,14 @@ export interface S3Config {
   presignedUrlProvider?: S3BrowserPresignedUrlProvider
   /** Optional default Content-Type for PUT via the presigner path. */
   defaultContentType?: string
+  /** Optional key prefix applied to all S3 paths. Leading slashes stripped; trailing slash enforced. */
+  keyPrefix?: string
+}
+
+export function normalizeKeyPrefix(v: string | undefined): string | undefined {
+  if (v === undefined || v === '') return undefined
+  const stripped = v.replace(/^\/+/, '')
+  return stripped.endsWith('/') ? stripped : `${stripped}/`
 }
 
 export interface S3ConfigRedacted extends Omit<

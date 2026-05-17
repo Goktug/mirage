@@ -16,14 +16,27 @@ import aioboto3
 from botocore.config import Config
 
 
-def _key(path: str) -> str:
-    return path.lstrip("/")
+def _key(path: str, config: object) -> str:
+    raw = path.lstrip("/")
+    prefix = getattr(config, "key_prefix", None) or ""
+    if prefix and not prefix.endswith("/"):
+        prefix = prefix + "/"
+    return prefix + raw
 
 
-def _prefix(path: str) -> str:
-    key = _key(path)
+def _prefix(path: str, config: object) -> str:
+    key = _key(path, config)
     if key and not key.endswith("/"):
         key += "/"
+    return key
+
+
+def _strip_prefix(key: str, config: object) -> str:
+    prefix = getattr(config, "key_prefix", None) or ""
+    if prefix and not prefix.endswith("/"):
+        prefix = prefix + "/"
+    if prefix and key.startswith(prefix):
+        return key[len(prefix):]
     return key
 
 

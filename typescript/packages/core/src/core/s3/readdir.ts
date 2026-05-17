@@ -57,7 +57,7 @@ export async function readdir(
     string,
     { size: number | null; etag: string; lastModified: Date | string | undefined }
   >()
-  const s3Pfx = s3Prefix(rawPath)
+  const s3Pfx = s3Prefix(rawPath, config)
   let continuationToken: string | undefined
   try {
     do {

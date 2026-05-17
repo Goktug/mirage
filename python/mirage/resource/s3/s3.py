@@ -15,7 +15,7 @@
 import dataclasses
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from mirage.accessor.s3 import S3Accessor
 from mirage.commands.builtin.s3 import COMMANDS as S3_COMMANDS
@@ -76,6 +76,17 @@ class S3Config(BaseModel):
     path_style: bool = False
     timeout: int = 30
     proxy: str | None = None
+    key_prefix: str | None = None
+
+    @field_validator("key_prefix")
+    @classmethod
+    def _normalize_key_prefix(cls, v: str | None) -> str | None:
+        if v is None or v == "":
+            return None
+        v = v.lstrip("/")
+        if not v.endswith("/"):
+            v = v + "/"
+        return v
 
 
 class S3Resource(BaseResource):

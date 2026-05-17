@@ -17,14 +17,24 @@ import type { PathSpec } from '../../types.ts'
 import { loadOptionalPeer } from '../../utils/optional_peer.ts'
 import type { S3Config } from '../../resource/s3/config.ts'
 
-export function s3Key(path: string): string {
-  return path.replace(/^\/+/, '')
+export function s3Key(path: string, config: S3Config): string {
+  const raw = path.replace(/^\/+/, '')
+  const prefix = config.keyPrefix ?? ''
+  return prefix + raw
 }
 
-export function s3Prefix(path: string): string {
-  const key = s3Key(path)
+export function s3Prefix(path: string, config: S3Config): string {
+  const key = s3Key(path, config)
   if (key === '') return ''
   return key.endsWith('/') ? key : `${key}/`
+}
+
+export function stripKeyPrefix(key: string, config: S3Config): string {
+  const prefix = config.keyPrefix ?? ''
+  if (prefix !== '' && key.startsWith(prefix)) {
+    return key.slice(prefix.length)
+  }
+  return key
 }
 
 export function rawPathOf(path: PathSpec): string {
