@@ -35,8 +35,23 @@ config = S3Config(
     aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"],
 )
 
+scoped_config = S3Config(
+    bucket=os.environ["AWS_S3_BUCKET"],
+    region=os.environ.get("AWS_DEFAULT_REGION", "us-east-1"),
+    aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"],
+    aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"],
+    key_prefix="data/",
+)
+
 backend = S3Resource(config)
-ws = Workspace({"/s3/": backend}, mode=MountMode.READ)
+scoped_backend = S3Resource(scoped_config)
+ws = Workspace(
+    {
+        "/s3/": backend,
+        "/scoped/": scoped_backend,
+    },
+    mode=MountMode.READ,
+)
 
 
 def ops_summary() -> str:
@@ -48,8 +63,56 @@ def ops_summary() -> str:
 
 
 async def main():
+    # ── key_prefix mount: same bucket, scoped to data/ subpath ──
+    # Demonstrates that /scoped/example.jsonl resolves to the same
+    # bucket object as /s3/data/example.jsonl, but agent-facing paths
+    # stay prefix-free. Same commands, same outputs.
+    print("=== KEY_PREFIX MOUNT (scoped to data/) ===\n")
+
+    print(f"  scoped key_prefix={scoped_config.key_prefix!r}")
+    print("  /scoped/example.jsonl  ←→  s3://bucket/data/example.jsonl\n")
+
+    print("--- ls /scoped/ ---")
+    r = await ws.execute("ls /scoped/")
+    print(f"  {(await r.stdout_str()).strip()}")
+
+    print("\n--- stat /scoped/example.jsonl ---")
+    r = await ws.execute("stat /scoped/example.jsonl")
+    print(f"  {(await r.stdout_str()).strip()}")
+
+    print("\n--- parity check: grep mirage on both mounts ---")
+    a = await (await ws.execute("grep mirage /s3/data/example.jsonl"
+                                " | wc -l")).stdout_str()
+    b = await (await ws.execute("grep mirage /scoped/example.jsonl"
+                                " | wc -l")).stdout_str()
+    print(f"  /s3/data/example.jsonl   matches: {a.strip()}")
+    print(f"  /scoped/example.jsonl    matches: {b.strip()}")
+    print(f"  parity: {a.strip() == b.strip()}")
+
+    print("\n--- grep -m 1 mirage /scoped/example.jsonl ---")
+    r = await ws.execute("grep -m 1 mirage /scoped/example.jsonl")
+    out = (await r.stdout_str()).strip()
+    print(f"  {out[:80]}{'...' if len(out) > 80 else ''}")
+
+    print("\n--- jq .metadata.version /scoped/example.json ---")
+    r = await ws.execute("jq .metadata.version /scoped/example.json")
+    print(f"  {(await r.stdout_str()).strip()}")
+
+    print("\n--- glob: ls /scoped/*.json ---")
+    r = await ws.execute("ls /scoped/*.json")
+    print(f"  {(await r.stdout_str()).strip()}")
+
+    print("\n--- rg -l mirage /scoped ---")
+    r = await ws.execute("rg -l mirage /scoped")
+    print(f"  {(await r.stdout_str()).strip()}")
+
+    print("\n--- get_state: key_prefix persists in resource state ---")
+    state = scoped_backend.get_state()
+    print(f"  config.key_prefix = {state['config'].get('key_prefix')!r}")
+    print(f"  redacted_fields  = {state['redacted_fields']}")
+
     # ── root listing (tests stat on directory prefixes) ──
-    print("=== ROOT LISTING ===\n")
+    print("\n=== ROOT LISTING ===\n")
 
     print("--- ls /s3/ ---")
     r = await ws.execute("ls /s3/")

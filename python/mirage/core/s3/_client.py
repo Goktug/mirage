@@ -15,32 +15,28 @@
 import aioboto3
 from botocore.config import Config
 
-
-def _key(path: str, config: object) -> str:
-    raw = path.lstrip("/")
-    prefix = getattr(config, "key_prefix", None) or ""
-    if prefix and not prefix.endswith("/"):
-        prefix = prefix + "/"
-    return prefix + raw
+from mirage.accessor.s3 import S3Config
 
 
-def _prefix(path: str, config: object) -> str:
+def _key(path: str, config: S3Config) -> str:
+    return (config.key_prefix or "") + path.lstrip("/")
+
+
+def _prefix(path: str, config: S3Config) -> str:
     key = _key(path, config)
     if key and not key.endswith("/"):
         key += "/"
     return key
 
 
-def _strip_prefix(key: str, config: object) -> str:
-    prefix = getattr(config, "key_prefix", None) or ""
-    if prefix and not prefix.endswith("/"):
-        prefix = prefix + "/"
+def _strip_prefix(key: str, config: S3Config) -> str:
+    prefix = config.key_prefix or ""
     if prefix and key.startswith(prefix):
         return key[len(prefix):]
     return key
 
 
-def _client_kwargs(config: object) -> dict:
+def _client_kwargs(config: S3Config) -> dict:
     kwargs: dict = {"service_name": "s3"}
     if config.region:
         kwargs["region_name"] = config.region
@@ -49,7 +45,7 @@ def _client_kwargs(config: object) -> dict:
     if config.aws_access_key_id and config.aws_secret_access_key:
         kwargs["aws_access_key_id"] = config.aws_access_key_id
         kwargs["aws_secret_access_key"] = config.aws_secret_access_key
-    if getattr(config, "aws_session_token", None):
+    if config.aws_session_token:
         kwargs["aws_session_token"] = config.aws_session_token
     cfg_kwargs: dict = {
         "connect_timeout": config.timeout,
@@ -57,11 +53,11 @@ def _client_kwargs(config: object) -> dict:
     }
     if config.proxy:
         cfg_kwargs["proxies"] = {"https": config.proxy, "http": config.proxy}
-    if getattr(config, "path_style", False):
+    if config.path_style:
         cfg_kwargs["s3"] = {"addressing_style": "path"}
     kwargs["config"] = Config(**cfg_kwargs)
     return kwargs
 
 
-def async_session(config: object):
+def async_session(config: S3Config) -> aioboto3.Session:
     return aioboto3.Session(profile_name=config.aws_profile or None)

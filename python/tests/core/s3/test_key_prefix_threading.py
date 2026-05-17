@@ -1,5 +1,4 @@
 import asyncio
-from contextlib import ExitStack
 
 from mirage.accessor.s3 import S3Accessor
 from mirage.cache.index.ram import RAMIndexCacheStore
