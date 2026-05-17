@@ -35,20 +35,20 @@ config = S3Config(
     aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"],
 )
 
-scoped_config = S3Config(
+deep_config = S3Config(
     bucket=os.environ["AWS_S3_BUCKET"],
     region=os.environ.get("AWS_DEFAULT_REGION", "us-east-1"),
     aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"],
     aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"],
-    key_prefix="data/",
+    key_prefix="subdata/subsubdata/",
 )
 
 backend = S3Resource(config)
-scoped_backend = S3Resource(scoped_config)
+deep_backend = S3Resource(deep_config)
 ws = Workspace(
     {
         "/s3/": backend,
-        "/scoped/": scoped_backend,
+        "/deep/": deep_backend,
     },
     mode=MountMode.READ,
 )
@@ -63,51 +63,103 @@ def ops_summary() -> str:
 
 
 async def main():
-    # ── key_prefix mount: same bucket, scoped to data/ subpath ──
-    # Demonstrates that /scoped/example.jsonl resolves to the same
-    # bucket object as /s3/data/example.jsonl, but agent-facing paths
-    # stay prefix-free. Same commands, same outputs.
-    print("=== KEY_PREFIX MOUNT (scoped to data/) ===\n")
+    # ── key_prefix mount: multi-segment subpath scoping ──
+    # Mounts the same bucket twice: /s3/ unscoped, /deep/ scoped to
+    # subdata/subsubdata/. Every operation against /deep/X resolves
+    # to s3://bucket/subdata/subsubdata/X with the prefix transparent
+    # to the agent.
+    print("=== KEY_PREFIX MOUNT (subdata/subsubdata/) ===\n")
 
-    print(f"  scoped key_prefix={scoped_config.key_prefix!r}")
-    print("  /scoped/example.jsonl  ←→  s3://bucket/data/example.jsonl\n")
+    print(f"  key_prefix = {deep_config.key_prefix!r}")
+    print("  /deep/X  ←→  s3://bucket/subdata/subsubdata/X\n")
 
-    print("--- ls /scoped/ ---")
-    r = await ws.execute("ls /scoped/")
-    print(f"  {(await r.stdout_str()).strip()}")
+    async def run(cmd: str, label: str | None = None) -> str:
+        r = await ws.execute(cmd)
+        out = (await r.stdout_str()).strip()
+        tag = label or cmd
+        head = out.splitlines()[0] if out else ""
+        more = f" (+{len(out.splitlines()) - 1} more)" if "\n" in out else ""
+        print(f"  $ {tag}\n    {head[:110]}{more}  [exit={r.exit_code}]")
+        return out
 
-    print("\n--- stat /scoped/example.jsonl ---")
-    r = await ws.execute("stat /scoped/example.jsonl")
-    print(f"  {(await r.stdout_str()).strip()}")
+    # ── listings ──
+    print("[listings]")
+    await run("ls /deep")
+    await run("ls -1 /deep")
+    await run("ls -la /deep")
 
-    print("\n--- parity check: grep mirage on both mounts ---")
-    a = await (await ws.execute("grep mirage /s3/data/example.jsonl"
-                                " | wc -l")).stdout_str()
-    b = await (await ws.execute("grep mirage /scoped/example.jsonl"
-                                " | wc -l")).stdout_str()
-    print(f"  /s3/data/example.jsonl   matches: {a.strip()}")
-    print(f"  /scoped/example.jsonl    matches: {b.strip()}")
+    # ── stat ──
+    print("\n[stat]")
+    await run("stat /deep/example.jsonl")
+    await run("stat /deep/example.json")
+    await run("stat /deep")
+
+    # ── existence ──
+    print("\n[exists]")
+    await run("test -f /deep/example.jsonl && echo present || echo absent")
+    await run("test -f /deep/no-such.txt && echo present || echo absent")
+    await run("test -d /deep && echo dir-present")
+
+    # ── reads ──
+    print("\n[read]")
+    await run("head -n 1 /deep/example.jsonl")
+    await run("tail -n 1 /deep/example.jsonl")
+    await run("wc -l /deep/example.jsonl")
+    await run("wc -c /deep/example.json")
+
+    # ── grep variants ──
+    print("\n[grep]")
+    await run("grep -c mirage /deep/example.jsonl")
+    await run("grep -m 1 mirage /deep/example.jsonl")
+    await run("grep -i MIRAGE /deep/example.jsonl | wc -l")
+    await run("grep -n queue-operation /deep/example.jsonl | head -n 1")
+    await run("grep -v queue-operation /deep/example.jsonl | wc -l")
+
+    # ── rg (the formerly-broken double-prefix case) ──
+    print("\n[rg]")
+    await run("rg -l mirage /deep")
+    await run("rg -c mirage /deep/example.json")
+    await run("rg -n queue-operation /deep/example.jsonl | head -n 1")
+
+    # ── find / du ──
+    print("\n[find / du]")
+    await run("find /deep -name '*.json'")
+    await run("find /deep -name 'example.*' | wc -l")
+    await run("find /deep -type f | wc -l")
+    await run("du /deep/example.jsonl")
+
+    # ── glob expansion ──
+    print("\n[glob]")
+    await run("echo /deep/*.json")
+    await run("echo /deep/example.*")
+    await run("for f in /deep/*.json; do wc -c $f; done")
+
+    # ── jq (validates content equivalence) ──
+    print("\n[jq]")
+    await run("jq .metadata.version /deep/example.json")
+    await run("jq '.departments[].teams[].name' /deep/example.json")
+
+    # ── pipelines / control flow ──
+    print("\n[pipelines]")
+    await run("cat /deep/example.jsonl | grep mirage | wc -l")
+    await run("grep queue-operation /deep/example.jsonl"
+              " | head -n 2 | cut -d , -f 1")
+    await run("grep -m 1 mirage /deep/example.jsonl && echo found")
+    await run("grep ZZZ_NOPE /deep/example.jsonl || echo fallback")
+
+    # ── parity vs /s3/ (same bucket, same object, different mount) ──
+    print("\n[parity vs /s3/]")
+    a = await (await
+               ws.execute("grep -c mirage /deep/example.jsonl")).stdout_str()
+    b = await (await ws.execute(
+        "grep -c mirage /s3/subdata/subsubdata/example.jsonl")).stdout_str()
+    print(f"  /deep/example.jsonl                       grep -c: {a.strip()}")
+    print(f"  /s3/subdata/subsubdata/example.jsonl      grep -c: {b.strip()}")
     print(f"  parity: {a.strip() == b.strip()}")
 
-    print("\n--- grep -m 1 mirage /scoped/example.jsonl ---")
-    r = await ws.execute("grep -m 1 mirage /scoped/example.jsonl")
-    out = (await r.stdout_str()).strip()
-    print(f"  {out[:80]}{'...' if len(out) > 80 else ''}")
-
-    print("\n--- jq .metadata.version /scoped/example.json ---")
-    r = await ws.execute("jq .metadata.version /scoped/example.json")
-    print(f"  {(await r.stdout_str()).strip()}")
-
-    print("\n--- glob: ls /scoped/*.json ---")
-    r = await ws.execute("ls /scoped/*.json")
-    print(f"  {(await r.stdout_str()).strip()}")
-
-    print("\n--- rg -l mirage /scoped ---")
-    r = await ws.execute("rg -l mirage /scoped")
-    print(f"  {(await r.stdout_str()).strip()}")
-
-    print("\n--- get_state: key_prefix persists in resource state ---")
-    state = scoped_backend.get_state()
+    # ── get_state ──
+    print("\n[get_state]")
+    state = deep_backend.get_state()
     print(f"  config.key_prefix = {state['config'].get('key_prefix')!r}")
     print(f"  redacted_fields  = {state['redacted_fields']}")
 
