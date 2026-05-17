@@ -15,26 +15,19 @@
 import type { S3Client } from '@aws-sdk/client-s3'
 import type { PathSpec } from '../../types.ts'
 import { loadOptionalPeer } from '../../utils/optional_peer.ts'
+import * as kp from '../../utils/key_prefix.ts'
 import type { S3Config } from '../../resource/s3/config.ts'
 
 export function s3Key(path: string, config: S3Config): string {
-  const raw = path.replace(/^\/+/, '')
-  const prefix = config.keyPrefix ?? ''
-  return prefix + raw
+  return kp.apply(config.keyPrefix ?? '', path)
 }
 
 export function s3Prefix(path: string, config: S3Config): string {
-  const key = s3Key(path, config)
-  if (key === '') return ''
-  return key.endsWith('/') ? key : `${key}/`
+  return kp.applyDir(config.keyPrefix ?? '', path)
 }
 
 export function stripKeyPrefix(key: string, config: S3Config): string {
-  const prefix = config.keyPrefix ?? ''
-  if (prefix !== '' && key.startsWith(prefix)) {
-    return key.slice(prefix.length)
-  }
-  return key
+  return kp.strip(config.keyPrefix ?? '', key)
 }
 
 export function rawPathOf(path: PathSpec): string {

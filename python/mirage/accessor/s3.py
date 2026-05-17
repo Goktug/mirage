@@ -15,6 +15,7 @@
 from pydantic import BaseModel, ConfigDict, field_validator
 
 from mirage.accessor.base import Accessor
+from mirage.utils import key_prefix as kp
 
 
 class S3Config(BaseModel):
@@ -35,12 +36,7 @@ class S3Config(BaseModel):
     @field_validator("key_prefix")
     @classmethod
     def _normalize_key_prefix(cls, v: str | None) -> str | None:
-        if v is None or v == "":
-            return None
-        v = v.lstrip("/")
-        if not v.endswith("/"):
-            v = v + "/"
-        return v
+        return kp.normalize(v) or None
 
 
 class S3Accessor(Accessor):

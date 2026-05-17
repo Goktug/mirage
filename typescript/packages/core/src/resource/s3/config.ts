@@ -12,6 +12,8 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import * as kp from '../../utils/key_prefix.ts'
+
 export type S3BrowserOperation = 'GET' | 'PUT' | 'HEAD' | 'DELETE' | 'LIST' | 'COPY'
 
 export interface S3BrowserSignOptions {
@@ -52,9 +54,8 @@ export interface S3Config {
 }
 
 export function normalizeKeyPrefix(v: string | undefined): string | undefined {
-  if (v === undefined || v === '') return undefined
-  const stripped = v.replace(/^\/+/, '')
-  return stripped.endsWith('/') ? stripped : `${stripped}/`
+  const out = kp.normalize(v)
+  return out === '' ? undefined : out
 }
 
 export interface S3ConfigRedacted extends Omit<

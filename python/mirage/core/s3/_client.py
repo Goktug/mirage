@@ -16,24 +16,19 @@ import aioboto3
 from botocore.config import Config
 
 from mirage.accessor.s3 import S3Config
+from mirage.utils import key_prefix as kp
 
 
 def _key(path: str, config: S3Config) -> str:
-    return (config.key_prefix or "") + path.lstrip("/")
+    return kp.apply(config.key_prefix or "", path)
 
 
 def _prefix(path: str, config: S3Config) -> str:
-    key = _key(path, config)
-    if key and not key.endswith("/"):
-        key += "/"
-    return key
+    return kp.apply_dir(config.key_prefix or "", path)
 
 
 def _strip_prefix(key: str, config: S3Config) -> str:
-    prefix = config.key_prefix or ""
-    if prefix and key.startswith(prefix):
-        return key[len(prefix):]
-    return key
+    return kp.strip(config.key_prefix or "", key)
 
 
 def _client_kwargs(config: S3Config) -> dict:
